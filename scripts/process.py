@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+# Aaron Torres wrote it at first
+#
+# It conversts PLFS map to R-input-compatible format
+
 import sys
 
 def main():
