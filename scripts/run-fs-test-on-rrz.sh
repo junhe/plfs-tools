@@ -10,7 +10,7 @@ testid2=plfs_221-9-15
 fs_test_exe_1="/users/jun/installs/fs-test/bin/fs_test.x"
 fs_test_exe_2=$fs_test_exe_1
 backends="/panfs/scratch1/vol2/jun/.plfs_store"
-plfsdir="/var/tmp/plfs.jun"
+plfsdir="/users/jun/mnt/plfs"
 targetdir="plfs:$plfsdir"
 objsize=4096
 
