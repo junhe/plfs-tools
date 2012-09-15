@@ -5,10 +5,10 @@
 flags="-nodb -io mpi -strided 1 -barriers aopen -barrier aclose"
 flags1="-nodb -io mpi -strided 1 -barriers aopen -barrier aclose -deletefile"
 
-testid1=envtest_pattern_8-8
-testid2=envtest_2.2.1_8-8
-fs_test_exe_1="/users/jun/tarballs/fs_test/fs_test"
-fs_test_exe_2="/users/atorrez/Testing-ext/test-fs-code/test_fs/trunk/fs_test.rrz.pattern.x"
+testid1=pattern_plfs_9-15
+testid2=plfs_221-9-15
+fs_test_exe_1="/users/jun/installs/fs-test/bin/fs_test.x"
+fs_test_exe_2=$fs_test_exe_1
 backends="/panfs/scratch1/vol2/jun/.plfs_store"
 plfsdir="/var/tmp/plfs.jun"
 targetdir="plfs:$plfsdir"
@@ -19,22 +19,25 @@ objsize=4096
 
 
 function set_pattern {
+source /users/jun/workdir/plfs-tools/scripts/set_plfs_pattern_env-rrz.sh
 #   echo "*******************"
-   unset LD_LIBRARY_PATH
+#   unset LD_LIBRARY_PATH
 #        plfs_map $plfsdir/$filename &> $filename.mapinfo
-   source ~/.cshrc-pattern
+#   source ~/.cshrc-pattern
 #   echo "PATTERN: $LD_LIBRARY_PATH"
 #   which plfs
 #   echo $PATH
 #   env > out.1
 }
 function set_2.2.1 {
+source /users/jun/workdir/plfs-tools/scripts/set_plfs221_vanilla-env-rrz.sh
+
 #   echo "*******************"
-   unset LD_LIBRARY_PATH
-   export PATH=`echo $PATH | sed 's/[:]*pattern-plfs.*://'`
-   export MODULESHOME=/usr/share/Modules
-   . $MODULESHOME/init/bash
-   source ~/.cshrc-2.2.1
+#   unset LD_LIBRARY_PATH
+#   export PATH=`echo $PATH | sed 's/[:]*pattern-plfs.*://'`
+#   export MODULESHOME=/usr/share/Modules
+#   . $MODULESHOME/init/bash
+#   source ~/.cshrc-2.2.1
 #   module list
 #   echo "LATEST: $LD_LIBRARY_PATH"
 #   echo "XXXXXX"
