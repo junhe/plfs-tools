@@ -111,7 +111,8 @@ echo np nobj objsize testid \
      ropen.min.archive ropen.avg.archive ropen.max.archive \
      rband.min.archive rband.avg.archive rband.max.archive \
      erband.min.archive erband.avg.archive erband.max.archive \
-     rclose.min.archive rclose.avg.archive rclose.max.archive 
+     rclose.min.archive rclose.avg.archive rclose.max.archive \
+     runid  # Be careful about this
 
 
 objsize=4096
