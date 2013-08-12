@@ -122,11 +122,17 @@ plot_plfs_on_ext3 <- function()
 # this function calcuates the most compact inode size for a file
 # each extent node holds 340 index/leaf, each leaf holds 128MB
 # this should be the case for PLFS, since PLFS always appending
-ext4_metadata_size_v1 <- function(nwrites, wsize)
+ext4_metadata_size_v1 <- function(nwrites, wsize, doMerge=T)
 {
-    file_size = nwrites * wsize
     EXTENT_SIZE = 128*1024*1024
-    nExtents = ceiling(file_size / EXTENT_SIZE)
+
+    if ( doMerge == TRUE ) {
+        file_size = nwrites * wsize
+        nExtents = ceiling(file_size / EXTENT_SIZE)
+    } else {
+        n_extent_per_write = ceiling(wsize / EXTENT_SIZE)
+        nExtents = nwrites * n_extent_per_write
+    }
 
     INODE_BASE = 256 # inode basic data structure size
     N_EXTENTS_PER_NODE = 340
@@ -143,11 +149,14 @@ ext4_metadata_size_v1 <- function(nwrites, wsize)
     } else if ( nExtents <= N_EXTENTS_L2 ) {
         n_leaves = ceiling(nExtents / N_EXTENTS_PER_NODE)
         n_internals = ceiling(n_leaves / N_EXTENTS_PER_NODE) 
+    } else {
+        stop("Extent map overflow")
     }
 
     total_sz = INODE_BASE + (n_leaves + n_internals) * BLOCKSIZE
     return (total_sz)
 }
+
 
 #####################################################
 #####################################################
