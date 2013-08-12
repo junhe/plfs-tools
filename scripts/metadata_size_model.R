@@ -119,4 +119,51 @@ plot_plfs_on_ext3 <- function()
     
 }
 
+#####################################################
+#####################################################
+#####################################################
+#####################################################
+# HDFS
+
+# This function only calcuate the HDFS part of metadata
+# it does not include the underlying ext metadata
+hdfs_metadata_size <- function(file_size)
+{
+    block_size = 64*1024*1024 #64 MB
+
+    nblocks = ceiling(file_size/block_size)    
+
+    # File basic cost
+    inode_base = 152
+    dir_entry = 64 #TODO: may not need this when we have 
+                   # another part calculating dir cost
+    filename_len = 13
+    filename_sz = filename_len*2
+    ref_FSDirectory = 8
+
+    per_file_basic_cost = inode_base + dir_entry + filename_sz + ref_FSDirectory
+
+    # Block cost
+    n_replica = 3 # 3 replicas
+    blockclass_sz = 32
+    blockinfo_sz = 64 + 8*n_replica
+    ref_inodeblocks = 8
+    BlocksMap_entry = 48
+    DatanodeDesc = 64 * n_replica
+
+    per_block_cost = blockclass_sz + blockinfo_sz + ref_inodeblocks + 
+                    BlocksMap_entry + DatanodeDesc 
+
+    # Total cost
+    total_sz = per_file_basic_cost + nblocks * per_block_cost
+    return (c(total_sz, per_file_basic_cost, per_block_cost))
+}
+
+
+
+
+
+
+
+
 
