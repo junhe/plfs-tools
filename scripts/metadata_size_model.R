@@ -1,4 +1,4 @@
-ext_metadata_size <- function(file_size)
+ext3_metadata_size <- function(file_size)
 {
     block_size = 4096;
     #size of the four parts
@@ -60,8 +60,8 @@ ext_metadata_size <- function(file_size)
 plfs_on_ext3 <- function(size_per_proc, nwrites_per_proc, np) 
 {
     plfs_index = 48*nwrites_per_proc*np;
-    ext_meta_indexfile = ext_metadata_size(48*nwrites_per_proc)*np
-    ext_meta_datafile = ext_metadata_size(size_per_proc)*np
+    ext_meta_indexfile = ext3_metadata_size(48*nwrites_per_proc)*np
+    ext_meta_datafile = ext3_metadata_size(size_per_proc)*np
     return ( data.frame(plfs_index, ext_meta_indexfile, ext_meta_datafile) )
 }
 
@@ -119,6 +119,36 @@ plot_plfs_on_ext3 <- function()
     
 }
 
+# this function calcuates the most compact inode size for a file
+# each extent node holds 340 index/leaf, each leaf holds 128MB
+# this should be the case for PLFS, since PLFS always appending
+ext4_metadata_size_v1 <- function(nwrites, wsize)
+{
+    file_size = nwrites * wsize
+    EXTENT_SIZE = 128*1024*1024
+    nExtents = ceiling(file_size / EXTENT_SIZE)
+
+    INODE_BASE = 256 # inode basic data structure size
+    N_EXTENTS_PER_NODE = 340
+    N_EXTENTS_L1 = 4*N_EXTENTS_PER_NODE
+    N_EXTENTS_L2 = N_EXTENTS_L1 * N_EXTENTS_PER_NODE 
+    BLOCKSIZE = 4096
+
+    n_leaves = 0
+    n_internals = 0
+    if ( nExtents <= 4 ) {
+        # do nothing
+    } else if ( nExtents <= N_EXTENTS_L1 ) {
+        n_leaves = ceiling(nExtents / N_EXTENTS_PER_NODE)
+    } else if ( nExtents <= N_EXTENTS_L2 ) {
+        n_leaves = ceiling(nExtents / N_EXTENTS_PER_NODE)
+        n_internals = ceiling(n_leaves / N_EXTENTS_PER_NODE) 
+    }
+
+    total_sz = INODE_BASE + (n_leaves + n_internals) * BLOCKSIZE
+    return (total_sz)
+}
+
 #####################################################
 #####################################################
 #####################################################
@@ -160,10 +190,65 @@ hdfs_metadata_size <- function(file_size)
 }
 
 
+hdfs_metadata_size_v2 <- function(file_size)
+{
+    block_size = 64*1024*1024 #64 MB
 
+    nblocks = ceiling(file_size/block_size)    
 
+    # INodeFile cost for this file
+    filename_len = 13
+    INodeFile_size = 16 + 
+                     24 + filename_len + # name
+                     8 + 8 + 8 + 8 +
+                     8 + 2 + 8 + 8 +
+                     24 + nblocks * 8 # blocks
 
+    # cost of parent dir
+    INodeDirectory_parent = 8 # an entry in children
 
+    # cost of BlockInfo for blocks of this file
+    n_replica = 3
+    per_BlockInfo_size = 16 +
+                     8 +
+                     8 +
+                     24 + 8*n_replica
 
+    total_blockinfo_size = nblocks * per_BlockInfo_size
+
+    # cost of Block
+    per_Block_size = 16 + 
+                     8 + 8 + 8
+    total_Block_sz = nblocks * per_BlockInfo_size
+
+    # cost of BlocksMap
+    BlocksMap_size = 48*nblocks # GSet entries. Size not confirmed.
+
+    # cost of DatanodeDescriptor
+    DatanodeDescriptor_size = (8 + #reference in BlockQueue
+                               16 + 8 + 24+8*n_replica) * nblocks #BlockTargetPair * nblocks
+
+    total_sz = INodeFile_size + INodeDirectory_parent +
+                total_blockinfo_size + total_Block_sz +
+                BlocksMap_size + DatanodeDescriptor_size
+
+    return (total_sz)
+}
+
+hdfs_metadata_size_v3 <- function(file_size)
+{
+    block_size = 64*1024*1024 #64 MB
+
+    nblocks = ceiling(file_size/block_size)    
+
+    filename_len = 13
+    n_replica = 3
+
+    inode_sz = 112+filename_len
+    block_sz = 112+24*n_replica
+
+    total_sz = inode_sz + nblocks*block_sz
+    return (total_sz)
+}
 
 
