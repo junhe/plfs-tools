@@ -198,48 +198,70 @@ hdfs_metadata_size <- function(file_size)
     return (c(total_sz, per_file_basic_cost, per_block_cost))
 }
 
-
+# Transient data are not included
 hdfs_metadata_size_v2 <- function(file_size)
 {
     block_size = 64*1024*1024 #64 MB
 
     nblocks = ceiling(file_size/block_size)    
 
-    # INodeFile cost for this file
+    # some assumptions
+    n_replica = 3
     filename_len = 13
+
+    #########################################
+    #########################################
+    # INodeFile cost for this file
+    # One file has only one INodeFile
     INodeFile_size = 16 + 
                      24 + filename_len + # name
                      8 + 8 + 8 + 8 +
                      8 + 2 + 8 + 8 +
                      24 + nblocks * 8 # blocks
-
-    # cost of parent dir
-    INodeDirectory_parent = 8 # an entry in children
-
-    # cost of BlockInfo for blocks of this file
-    n_replica = 3
-    per_BlockInfo_size = 16 +
-                     8 +
-                     8 +
-                     24 + 8*n_replica
-
-    total_blockinfo_size = nblocks * per_BlockInfo_size
-
     # cost of Block
     per_Block_size = 16 + 
                      8 + 8 + 8
-    total_Block_sz = nblocks * per_BlockInfo_size
+    total_Block_sz = nblocks * per_Block_size
+
+
+    #########################################
+    #########################################
+    # cost of parent dir
+    # One file has only one entry in parent directory
+    INodeDirectory_parent = 8 # an entry in children
+
+    #########################################
+    #########################################
+    # blockMaps in FSNameSystem
+    # cost of BlockInfo for blocks of this file
+    per_BlockInfo_size = 16 +
+                     8 +
+                     8 +
+                     24 + 3*8*n_replica
+
+    total_blockinfo_size = nblocks * per_BlockInfo_size
 
     # cost of BlocksMap
-    BlocksMap_size = 48*nblocks # GSet entries. Size not confirmed.
+    BlocksMap_size = 8*nblocks # LightWeightedGSET entry reference, at least this size
+                               # the GSET entries are actually BlockInfo itself
 
-    # cost of DatanodeDescriptor
-    DatanodeDescriptor_size = (8 + #reference in BlockQueue
-                               16 + 8 + 24+8*n_replica) * nblocks #BlockTargetPair * nblocks
 
-    total_sz = INodeFile_size + INodeDirectory_parent +
-                total_blockinfo_size + total_Block_sz +
-                BlocksMap_size + DatanodeDescriptor_size
+    #########################################
+    #########################################
+    # DatanodeDescriptor in FSNameSystem
+    # DatanodeDescriptor actually only holds a reference to
+    # the head of a list of BlockInfo in FSNameSystem.blocksMap, 
+    # so it takes NO space
+
+
+    #########################################
+    #########################################
+    #########################################
+    #########################################
+    #########################################
+    #########################################
+    total_sz = INodeFile_size + total_Block_sz + INodeDirectory_parent +
+                total_blockinfo_size + BlocksMap_size
 
     return (total_sz)
 }
