@@ -122,7 +122,7 @@ plot_plfs_on_ext3 <- function()
 # this function calcuates the most compact inode size for a file
 # each extent node holds 340 index/leaf, each leaf holds 128MB
 # this should be the case for PLFS, since PLFS always appending
-ext4_metadata_size_v1 <- function(nwrites, wsize, doMerge=T)
+ext4_metadata_size <- function(nwrites, wsize, doMerge=T)
 {
     EXTENT_SIZE = 128*1024*1024
 
@@ -166,7 +166,7 @@ ext4_metadata_size_v1 <- function(nwrites, wsize, doMerge=T)
 
 # This function only calcuate the HDFS part of metadata
 # it does not include the underlying ext metadata
-hdfs_metadata_size <- function(file_size)
+hdfs_metadata_size_v0.13.1 <- function(file_size)
 {
     block_size = 64*1024*1024 #64 MB
 
@@ -199,7 +199,8 @@ hdfs_metadata_size <- function(file_size)
 }
 
 # Transient data are not included
-hdfs_metadata_size_v2 <- function(file_size)
+# This size is got from Hadoop 1.2.1
+hdfs_metadata_size_v1.2.1 <- function(file_size)
 {
     block_size = 64*1024*1024 #64 MB
 
@@ -266,7 +267,7 @@ hdfs_metadata_size_v2 <- function(file_size)
     return (total_sz)
 }
 
-hdfs_metadata_size_v3 <- function(file_size)
+hdfs_metadata_size_vproposal <- function(file_size)
 {
     block_size = 64*1024*1024 #64 MB
 
@@ -280,6 +281,38 @@ hdfs_metadata_size_v3 <- function(file_size)
 
     total_sz = inode_sz + nblocks*block_sz
     return (total_sz)
+}
+
+
+###################################################
+###################################################
+###################################################
+###################################################
+
+hdfs_ext_metadata_size <- function(file_size, hdfs_ver="1.2.1", ext_ver="4")
+{
+    hdfs_size = 0
+    if ( hdfs_ver == "1.2.1" ) {
+        hdfs_size = hdfs_metadata_size_v1.2.1(file_size)
+    } else if ( hdfs_ver == "0.13.1" ) {
+        hdfs_size = hdfs_metadata_size_v0.13.1(file_size)
+    }
+
+    block_size = 64*1024*1024 #64 MB
+    n_whole_blocks = file_size %/% block_size
+    block_rem = file_size %% block_size
+    n_block_rem = block_rem %/% block_size
+
+    ext_size = 0
+    if (ext_ver == "4") {
+        ext_size = ext_size + ext4_metadata_size(1, block_size) * n_whole_blocks
+        ext_size = ext_size + ext4_metadata_size(1, block_rem) * n_block_rem
+    } else if (ext_ver == "3") {
+        ext_size = ext_size + ext3_metadata_size(block_size) * n_whole_blocks
+        ext_size = ext_size + ext3_metadata_size(block_rem) * n_block_rem
+    }
+    hdfs_ext_size = hdfs_size + ext_size
+    return ( data.frame(hdfs_ext_size, hdfs_size, ext_size) )
 }
 
 
