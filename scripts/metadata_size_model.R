@@ -114,7 +114,7 @@ plot_plfs_on_ext3 <- function()
             geom_bar(aes(fill=variable), stat="identity", dodge="stack") +
             geom_text(aes(label=sztext, y=text_ypos, color=variable), size=3) +
             facet_grid(nwrites_per_proc~size_per_proc_MB) + 
-            xlab("Num of Proc") + ylab("Size (MB)")
+            xlab("Num of Proc") + ylab("Metadata Size (MB)")
     print(pp)
     
 }
@@ -195,7 +195,7 @@ hdfs_metadata_size_v0.13.1 <- function(file_size)
 
     # Total cost
     total_sz = per_file_basic_cost + nblocks * per_block_cost
-    return (c(total_sz, per_file_basic_cost, per_block_cost))
+    return (total_sz)
 }
 
 # Transient data are not included
@@ -296,23 +296,216 @@ hdfs_ext_metadata_size <- function(file_size, hdfs_ver="1.2.1", ext_ver="4")
         hdfs_size = hdfs_metadata_size_v1.2.1(file_size)
     } else if ( hdfs_ver == "0.13.1" ) {
         hdfs_size = hdfs_metadata_size_v0.13.1(file_size)
+    } else {
+        stop("Invalid HDFS version")
     }
 
     block_size = 64*1024*1024 #64 MB
     n_whole_blocks = file_size %/% block_size
     block_rem = file_size %% block_size
-    n_block_rem = block_rem %/% block_size
 
     ext_size = 0
     if (ext_ver == "4") {
         ext_size = ext_size + ext4_metadata_size(1, block_size) * n_whole_blocks
-        ext_size = ext_size + ext4_metadata_size(1, block_rem) * n_block_rem
+        if ( block_rem > 0 ) {
+            ext_size = ext_size + ext4_metadata_size(1, block_rem)
+        }
     } else if (ext_ver == "3") {
         ext_size = ext_size + ext3_metadata_size(block_size) * n_whole_blocks
-        ext_size = ext_size + ext3_metadata_size(block_rem) * n_block_rem
+        if ( block_rem > 0 ) {
+            ext_size = ext_size + ext3_metadata_size(block_rem)
+        }
+    } else {
+        stop("Invalid EXT version")
     }
-    hdfs_ext_size = hdfs_size + ext_size
-    return ( data.frame(hdfs_ext_size, hdfs_size, ext_size) )
+    #hdfs_ext_size = hdfs_size + ext_size
+    return ( data.frame(hdfs_size, ext_size) )
 }
 
+
+#################################################
+
+plfs_on_hdfs_ext <- function(size_per_proc, nwrites_per_proc, np, 
+                             my_hdfs_ver, my_ext_ver) 
+{
+    plfs_index = 48*nwrites_per_proc*np;
+    hdfs_ext_meta_indexfile = np * hdfs_ext_metadata_size(48*nwrites_per_proc,
+                                                          my_hdfs_ver,
+                                                          my_ext_ver)
+    hdfs_ext_meta_datafile = np * hdfs_ext_metadata_size(size_per_proc,
+                                                         my_hdfs_ver,
+                                                         my_ext_ver)
+    index_and_datafile = rbind(hdfs_ext_meta_indexfile, 
+                               hdfs_ext_meta_datafile)
+    #print(index_and_datafile)
+    index_and_datafile = colSums(index_and_datafile)
+    #print(t(as.data.frame(index_and_datafile)))
+    index_and_datafile = t(as.data.frame(index_and_datafile))
+    return ( cbind(plfs_index, index_and_datafile) )
+}
+
+ddply_plfs_on_hdfs_ext <- function(df)
+{
+    tmp = with(df, {
+               plfs_on_hdfs_ext(size_per_proc, nwrites_per_proc, np,
+                           hdfs_ver, ext_ver)
+                   })
+    return(cbind(df, tmp))
+}
+
+plot_plfs_on_hdfs_ext <- function()
+{
+    myseq = c()
+    for ( i in 1:3 ) {
+        myseq = c(myseq, 4^i);
+    }
+    my_hdfs_ver = c("1.2.1", "0.13.1")
+    my_ext_ver = c("3", "4")
+    df = expand.grid(size_per_proc=myseq*(1024*1024), 
+                     nwrites_per_proc=myseq*16, 
+                     np=myseq^2,
+                     hdfs_ver=my_hdfs_ver,
+                     ext_ver=my_ext_ver)
+    df$rowid = row.names(df) # so I can do per row ddply() 
+    
+    df = ddply(df, .(rowid), ddply_plfs_on_hdfs_ext);
+    df$size_per_proc_MB = factor(df$size_per_proc/(1024*1024));
+    #print(head(df))
+    
+    df.melt = melt(df, id=c("size_per_proc_MB", "nwrites_per_proc", "np", 
+                            "hdfs_ver", "ext_ver"), 
+                       measure=c("plfs_index", "hdfs_size", "ext_size" ));
+    df.melt$value=df.melt$value/(1024*1024);
+
+    for ( my_hdfs_ver in unique(df.melt$hdfs_ver) ) {
+        for ( my_ext_ver in unique(df.melt$ext_ver) ) {
+            df.plot = subset(df.melt, hdfs_ver == my_hdfs_ver & ext_ver == my_ext_ver)
+            
+            #wanted_order = c("plfs_index","hdfs_size","ext_size")
+            wanted_order = c("ext_size","hdfs_size","plfs_index")
+            df.plot$variable = factor(df.plot$variable, levels=wanted_order)
+            #nw_order = paste("# of writes per proc:",sort(unique(df.plot$nwrites_per_proc)));
+            #df.plot$nwrites_per_proc = paste("# of writes per proc:", df.plot$nwrites_per_proc);
+            #df.plot$nwrites_per_proc = factor(df.plot$nwrites_per_proc, levels = nw_order);
+            
+            df.plot = within(df.plot, {nwrites_per_proc=factor(nwrites_per_proc);
+                             levels(nwrites_per_proc)=
+                                paste("# of writes per proc:", levels(nwrites_per_proc))
+                            })
+
+            #szproc_order = paste("size_per_proc_MB:", sort(unique(df.plot$size_per_proc_MB)));
+            #df.plot$size_per_proc_MB = paste("size_per_proc_MB:", df.plot$size_per_proc_MB);
+            #df.plot$size_per_proc_MB = factor(df.plot$size_per_proc_MB, levels=szproc_order);
+
+            df.plot = within(df.plot, {
+                                size_per_proc_MB = factor(size_per_proc_MB);
+                                levels(size_per_proc_MB) = 
+                                    paste("size_per_proc_MB:", levels(size_per_proc_MB));
+                            })
+
+            df.plot$text_ypos = 0;
+            maxs = ddply(df.plot, .(variable), subset, value==max(value))
+            maxs = ddply(maxs, .(variable), head, n=1)
+            print(maxs)
+            max_y_val = sum(maxs$value)
+            v_gap = max_y_val*0.075
+            df.plot$text_ypos = mapvalues(df.plot$variable, 
+                                          from=wanted_order,
+                                          to= max_y_val + c(1,2,3)*v_gap )
+            df.plot$text_ypos = as.numeric(as.character(df.plot$text_ypos))
+            #df.plot$text_ypos[ df.plot$variable == "plfs_index" ] = 350+myadjust;
+            #df.plot$text_ypos[ df.plot$variable == "ext_meta_indexfile" ] = 400+myadjust;
+            #df.plot$text_ypos[ df.plot$variable == "ext_meta_datafile" ] = 450+myadjust;
+
+            df.plot$sztext = format(df.plot$value, digit=4, scientific=F);
+            print(df.plot)
+            print(summary(df.plot))
+            pp = ggplot(df.plot, aes(x=factor(np), y=value, order=variable, color=variable, fill=variable)) +
+                    geom_bar(aes(), stat="identity", dodge="stack") +
+                    geom_text(aes(label=sztext, y=text_ypos), size=3) +
+                    facet_grid(nwrites_per_proc~size_per_proc_MB) + 
+                    xlab("Num of Proc") + ylab("Metadata Size (MB)") +
+                    ggtitle( paste("PLFS+HDFS v", my_hdfs_ver, "+EXT v", my_ext_ver,"", sep="") ) +
+                    scale_color_discrete(breaks=rev(wanted_order)) +
+                    scale_fill_discrete(breaks=rev(wanted_order)) 
+            windows()
+            print(pp)
+        }
+    } 
+}
+
+plot_plfs_on_hdfs_ext_v2 <- function()
+{
+    myseq = c()
+    for ( i in 1:3 ) {
+        myseq = c(myseq, 4^i);
+    }
+    my_hdfs_ver = c("1.2.1", "0.13.1")
+    my_ext_ver = c("3", "4")
+    df = expand.grid(size_per_proc=c(64, 256, 1024, 4096)*1024*1024, 
+                     nwrites_per_proc=c(1, 4096), 
+                     np=c(1, 8, 64, 512)*4096,
+                     hdfs_ver=my_hdfs_ver,
+                     ext_ver=my_ext_ver)
+    df$rowid = row.names(df) # so I can do per row ddply() 
+    
+    df = ddply(df, .(rowid), ddply_plfs_on_hdfs_ext);
+    df$size_per_proc_MB = factor(df$size_per_proc/(1024*1024));
+    #print(head(df))
+    
+    df.melt = melt(df, id=c("size_per_proc_MB", "nwrites_per_proc", "np", 
+                            "hdfs_ver", "ext_ver"), 
+                       measure=c("plfs_index", "hdfs_size", "ext_size" ));
+    df.melt$value=df.melt$value/(1024*1024);
+
+    for ( my_hdfs_ver in unique(df.melt$hdfs_ver) ) {
+        for ( my_ext_ver in unique(df.melt$ext_ver) ) {
+            df.plot = subset(df.melt, hdfs_ver == my_hdfs_ver & ext_ver == my_ext_ver)
+            
+            #wanted_order = c("plfs_index","hdfs_size","ext_size")
+            wanted_order = c("ext_size","hdfs_size","plfs_index")
+            df.plot$variable = factor(df.plot$variable, levels=wanted_order)
+            #df.plot = subset(df.plot, variable != "plfs_index") #I don't need this one here
+            
+            df.plot = within(df.plot, {nwrites_per_proc=factor(nwrites_per_proc);
+                             levels(nwrites_per_proc)=
+                                paste("# of writes per proc:", levels(nwrites_per_proc))
+                            })
+
+            df.plot = within(df.plot, {
+                                size_per_proc_MB = factor(size_per_proc_MB);
+                                levels(size_per_proc_MB) = 
+                                    paste("size_per_proc_MB:", levels(size_per_proc_MB));
+                            })
+
+            df.plot$text_ypos = 0;
+            maxs = ddply(df.plot, .(variable), subset, value==max(value))
+            maxs = ddply(maxs, .(variable), head, n=1)
+            #print(maxs)
+            max_y_val = sum(maxs$value)
+            v_gap = max_y_val*0.075
+            df.plot$text_ypos = mapvalues(df.plot$variable, 
+                                          from=wanted_order,
+                                          to= max_y_val + c(1,2,3)*v_gap )
+            df.plot$text_ypos = as.numeric(as.character(df.plot$text_ypos))
+            #df.plot$text_ypos[ df.plot$variable == "plfs_index" ] = 350+myadjust;
+            #df.plot$text_ypos[ df.plot$variable == "ext_meta_indexfile" ] = 400+myadjust;
+            #df.plot$text_ypos[ df.plot$variable == "ext_meta_datafile" ] = 450+myadjust;
+
+            df.plot$sztext = format(df.plot$value, digit=4, scientific=F);
+            #print(df.plot)
+            #print(summary(df.plot))
+            pp = ggplot(df.plot, aes(x=factor(np), y=value, order=variable, color=variable, fill=variable)) +
+                    geom_bar(aes(), stat="identity", dodge="stack") +
+                    geom_text(aes(label=sztext, y=text_ypos), size=3) +
+                    facet_grid(nwrites_per_proc~size_per_proc_MB) + 
+                    xlab("Num of Proc") + ylab("Metadata Size (MB)") +
+                    ggtitle( paste("PLFS+HDFS v", my_hdfs_ver, "+EXT v", my_ext_ver,"", sep="") ) +
+                    scale_color_discrete(breaks=rev(wanted_order)) +
+                    scale_fill_discrete(breaks=rev(wanted_order)) 
+            windows()
+            print(pp)
+        }
+    } 
+}
 
